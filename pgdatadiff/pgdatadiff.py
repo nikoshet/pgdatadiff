@@ -9,7 +9,7 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm.session import sessionmaker
 from sqlalchemy.sql.schema import MetaData, Table
 import traceback
-
+import sys
 
 def make_session(connection_string):
     engine = create_engine(connection_string, echo=False,
@@ -20,23 +20,25 @@ def make_session(connection_string):
 
 class DBDiff(object):
 
-    def __init__(self, firstdb, seconddb, schema, chunk_size=10000, count_only=False, exclude_tables=""):
+    def __init__(self, firstdb, seconddb, schema, chunk_size=10000, count_only=False, exclude_tables="", include_tables=""):
         firstsession, firstengine = make_session(firstdb)
         secondsession, secondengine = make_session(seconddb)
         self.firstsession = firstsession
         self.firstengine = firstengine
         self.secondsession = secondsession
         self.secondengine = secondengine
-        self.schema = schema or 'public'
+        self.schema = schema
         self.firstmeta = MetaData(bind=firstengine, schema=self.schema)
         self.secondmeta = MetaData(bind=secondengine, schema=self.schema)
         self.firstinspector = inspect(firstengine)
         self.secondinspector = inspect(secondengine)
         self.chunk_size = int(chunk_size)
         self.count_only = count_only
-        self.exclude_tables = exclude_tables.split(',')
+        self.exclude_tables = "" if len(exclude_tables)==0 else exclude_tables.split(',')
+        self.include_tables = "" if len(include_tables)==0 else include_tables.split(',')
 
     def diff_table_data(self, tablename):
+
         try:
             firsttable = Table(tablename, self.firstmeta, autoload=True, schema=self.schema)
             firstquery = self.firstsession.query(firsttable)
@@ -147,22 +149,27 @@ class DBDiff(object):
             warnings.simplefilter("ignore", category=sa_exc.SAWarning)
             tables = sorted(
                 self.firstinspector.get_table_names(schema=self.schema))
+
+            if len(self.exclude_tables) and len(self.include_tables):
+                sys.exit("Only one of '--exlude-tables' and '--include-tables' must be set.")
+
             for table in tables:
-                if table in self.exclude_tables:
+                if len(self.exclude_tables) and table in self.exclude_tables:
                     print(bold(yellow(f"Ignoring table {table}")))
                     continue
-                with Halo(
-                        text=f"Analysing table {table}. "
-                             f"[{tables.index(table) + 1}/{len(tables)}]",
-                        spinner='dots') as spinner:
-                    result, message = self.diff_table_data(table)
-                    if result is True:
-                        spinner.succeed(f"{table} - {message}")
-                    elif result is None:
-                        spinner.warn(f"{table} - {message}")
-                    else:
-                        failures += 1
-                        spinner.fail(f"{table} - {message}")
+                if table in self.include_tables or self.include_tables=="":
+                    with Halo(
+                            text=f"Analysing table {table}. "
+                                f"[{tables.index(table) + 1}/{len(tables)}]",
+                            spinner='dots') as spinner:
+                        result, message = self.diff_table_data(table)
+                        if result is True:
+                            spinner.succeed(f"{table} - {message}")
+                        elif result is None:
+                            spinner.warn(f"{table} - {message}")
+                        else:
+                            failures += 1
+                            spinner.fail(f"{table} - {message}")
         print(bold(green('Table analysis complete.')))
         if failures > 0:
             return 1

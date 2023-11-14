@@ -34,4 +34,9 @@ Docker images are available.
 
 `docker run -it davidjmarkey/pgdatadiff:0.2.1 /usr/bin/pgdatadiff`
 
+## Local development
 
+```
+docker build --tag nikoshet/pgdatadiff:latest .
+docker run -it nikoshet/pgdatadiff:latest /usr/bin/pgdatadiff --firstdb=postgres://user:pass@localhost/db1 --seconddb=postgres://user:pass@localhost/db2
+```
